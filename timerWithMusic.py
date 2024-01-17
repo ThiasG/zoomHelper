@@ -1,28 +1,9 @@
 import wx
 import wx.gizmos as gizmos
-import sys, argparse, time
-
-
-class LEDCtrl (gizmos.LEDNumberCtrl):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        c = self.const
-        self.const.DIGITS['9'] = c.LINE1 | c.LINE2 | c.LINE3 | c.LINE6 | c.LINE7 | c.LINE4
-
-class PopMenu(wx.Menu):
-    def __init__(self, parent):
-        super(PopMenu, self).__init__()
-        self.parent = parent
- 
-        # menu item 1
-        popmenu = wx.MenuItem(self, -1, 'one ')
-        self.Append(popmenu)
-        # menu item 2
-        popmenu2 = wx.MenuItem(self, -1, 'two')
-        self.Append(popmenu2)
-
-import os.path
 import wx.media
+import sys, argparse, time
+import os.path
+
 
 class MusicPlayer:
     def __init__(self, parent) -> None:
@@ -80,24 +61,29 @@ class MusicPlayer:
     def fadeout(self, seconds):
         self.shouldplay = False
         vol = self.player.GetVolume()
-        step = vol / seconds / 100.0
-        for nextVol in range(seconds * 100 // 1):
+        step = vol / seconds / 200.0
+        for nextVol in range(int(seconds * 200)):
             self.player.SetVolume(vol-step*nextVol)
-            time.sleep(1/100.0)
+            time.sleep(1/200.0)
         self.player.Stop()
         self.player.SetVolume(vol)
 
-    def volUp(self):
-        vol = self.player.GetVolume() 
-        vol += 0.05
-        self.player.SetVolume(vol)
-        print ("volUp", vol, self.player.GetVolume() )
+    @staticmethod
+    def volToIntern(vol):
+        return vol / 100.0
 
-    def volDown(self):
-        vol = self.player.GetVolume() 
-        vol -= 0.05
+    @staticmethod
+    def internToVol(vol):
+        return int (vol * 100 + 0.5)
+
+    def volUp(self, inc=5):
+        volOld = self.player.GetVolume() 
+        vol = self.volToIntern(self.internToVol(volOld) + inc)
         self.player.SetVolume(vol)
-        print ("volDown", vol, self.player.GetVolume() )
+        print ("volUp", inc, volOld, vol, self.player.GetVolume() )
+
+    def volDown(self, dec = 5):
+        self.volUp(inc = -dec)
 
     def __getNextSong(self):
         if not self.musicFiles:
@@ -106,6 +92,11 @@ class MusicPlayer:
         self.pos = (self.pos + 1) % len(self.musicFiles)
         return filename      
 
+class LEDCtrl (gizmos.LEDNumberCtrl):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        c = self.const
+        self.const.DIGITS['9'] = c.LINE1 | c.LINE2 | c.LINE3 | c.LINE6 | c.LINE7 | c.LINE4
 
 class LEDTimer(wx.Frame):
     """
@@ -121,9 +112,18 @@ class LEDTimer(wx.Frame):
         self.musicPlayer = MusicPlayer(self)
         
         self.menu = wx.Menu()
-        self.menuitems = [ wx.MenuItem(self.menu, wx.NewIdRef(), 'Eins'), 
-                         wx.MenuItem(self.menu, wx.NewIdRef(), 'Zwei') ]
-        [self.menu.Append(menuitem) for menuitem in self.menuitems ]
+        self.menuitems = [ 
+            (wx.MenuItem(self.menu, wx.NewIdRef(), 'Start'),  self.OnStartTimer),
+            (wx.MenuItem(self.menu, wx.NewIdRef(), 'Reset'),  lambda event : self.StopTimer()),
+            (wx.MenuItem(self.menu, wx.NewIdRef(), 'Timer einstellen'),  self.OnSetTimer),
+            (wx.MenuItem(self.menu, wx.NewIdRef(), 'Lauter'), lambda event : self.musicPlayer.volUp()), 
+            (wx.MenuItem(self.menu, wx.NewIdRef(), 'Leiser'), lambda event : self.musicPlayer.volDown()),  
+        ]
+                           
+        for menuitem, handler in self.menuitems:
+          self.menu.Append(menuitem)
+          if handler is not None:
+            self.Bind(wx.EVT_MENU, handler, menuitem)
 
         size = wx.Size(450, 170)
         style = gizmos.LED_ALIGN_CENTER | wx.BORDER_NONE | wx.NO_BORDER # | gizmos.LED_DRAW_FADED
@@ -142,9 +142,9 @@ class LEDTimer(wx.Frame):
         self.Paint()
 
         self.led.Bind(wx.EVT_CONTEXT_MENU, self.OnContextMenu)
-        self.led.Bind(wx.EVT_LEFT_UP, self.StartTimer)        
+        self.led.Bind(wx.EVT_LEFT_UP, self.OnStartTimer)        
         self.Bind(wx.EVT_CONTEXT_MENU, self.OnContextMenu)
-        self.Bind(wx.EVT_LEFT_UP, self.StartTimer)        
+        self.Bind(wx.EVT_LEFT_UP, self.OnStartTimer)        
         self.led.Bind(wx.EVT_CHAR, self.onKeyPressed)
         self.Bind(wx.EVT_CHAR, self.onKeyPressed)
         
@@ -172,7 +172,10 @@ class LEDTimer(wx.Frame):
         pos = self.ScreenToClient(pos)
         self.PopupMenu(self.menu, pos)
 
-    def StartTimer(self, event):
+    def OnSetTimer(self, event):
+        pass
+
+    def OnStartTimer(self, event=None):
         if not self.started:
             try:
                 self.musicPlayer.startPlay()
@@ -202,6 +205,14 @@ class LEDTimer(wx.Frame):
                 self.musicPlayer.fadeout(1)
                 self.timer.Stop()
                 self.started = False
+    
+    def StopTimer(self):
+        if self.started:
+            self.musicPlayer.fadeout(0.5)
+            self.timer.Stop()
+            self.started = False
+            self.Paint()
+
         
 def main(argv):
     parser = argparse.ArgumentParser()
@@ -225,5 +236,5 @@ def main(argv):
 if __name__ == '__main__':
     args = sys.argv
     #args = [sys.argv[0]] + ["-d", "/home/thias/Desktop/LSL/music/Hasta La Blister/", "-m.2" ]
-    #args = [sys.argv[0]] + ["-d", "/home/thias/Desktop/LSL/music/guitar/", "-m10" ]
+    args = [sys.argv[0]] + ["-d", "/home/thias/Desktop/LSL/music/guitar/", "-m10" ]
     sys.exit(main(args))
