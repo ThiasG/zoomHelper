@@ -17,12 +17,10 @@ class MusicPlayer:
         self.vol = None
           
     def OnMediaStop(self, event):
-        print ("OnMediaStop", event, self.shouldplay, self.player.GetState())
         if self.shouldplay:
             ret = self.player.Load(self.__getNextSong())
     
     def OnMediaLoaded(self, event):
-        print ("OnMediaLoaded", event, self.player.GetState())
         if self.vol is not None:
             self.setVol(self.vol)
         ret = self.player.Play()
@@ -208,7 +206,6 @@ class LEDTimer(wx.Frame):
         return f'{value // 60:01}:{value % 60:02}'
 
     def onKeyPressed(self, event):
-        print ("Key Pressed:", event.GetKeyCode(), ord('+'), ord('-'))
         key = event.GetKeyCode()
         if ord('+') == key:
             self.musicPlayer.volUp()
