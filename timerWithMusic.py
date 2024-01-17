@@ -1,6 +1,7 @@
 import wx
 import wx.gizmos as gizmos
 import wx.media
+import wx.lib.agw.floatspin as FS
 import sys, argparse, time
 import os.path
 
@@ -8,19 +9,22 @@ import os.path
 class MusicPlayer:
     def __init__(self, parent) -> None:
         self.musicFiles = []
-        self.pos = None
+        self.pos = 0
         self.player = wx.media.MediaCtrl(parent, -1)
         parent.Bind(wx.media.EVT_MEDIA_STOP, self.OnMediaStop, self.player)
         parent.Bind(wx.media.EVT_MEDIA_LOADED, self.OnMediaLoaded, self.player)
         self.shouldplay = False
+        self.vol = None
           
     def OnMediaStop(self, event):
-        print ("OnMediaStop", event, self.shouldplay)
+        print ("OnMediaStop", event, self.shouldplay, self.player.GetState())
         if self.shouldplay:
             ret = self.player.Load(self.__getNextSong())
     
     def OnMediaLoaded(self, event):
-        print ("OnMediaStop", event)
+        print ("OnMediaLoaded", event, self.player.GetState())
+        if self.vol is not None:
+            self.setVol(self.vol)
         ret = self.player.Play()
 
     allowedExts = [".flac", ".mp3", ".ogg"]
@@ -36,15 +40,11 @@ class MusicPlayer:
         files = [ self.__normPath(os.path.join(dir, file)) for file in files if self.__checkExt(file)]
         files.sort()
         self.musicFiles += files
-        if not self.pos:
-            self.pos = 0
 
     def addMusicFromFile(self, filename):
         if not self.__checkExt(filename):
             raise Exception("Extension not supported", filename)
         self.musicFiles.append(self.__normPath(filename))
-        if not self.pos:
-            self.pos = 0
 
     def startPlay(self):
         if not self.musicFiles:
@@ -80,10 +80,21 @@ class MusicPlayer:
         volOld = self.player.GetVolume() 
         vol = self.volToIntern(self.internToVol(volOld) + inc)
         self.player.SetVolume(vol)
-        print ("volUp", inc, volOld, vol, self.player.GetVolume() )
+        print ("volUp", inc, volOld * 100.0, vol * 100.0, self.player.GetVolume() * 100.0 )
 
     def volDown(self, dec = 5):
         self.volUp(inc = -dec)
+
+    def setPosition(self, pos):
+        self.pos = self.pos % len(self.musicFiles)
+
+    def setVol(self, vol = 100):
+        if self.player.GetVolume() < 0.00001 and  self.player.GetState() == wx.media.MEDIASTATE_STOPPED:
+            self.vol = vol
+        else:
+            self.player.SetVolume(self.volToIntern(vol))
+        print ("volUp", vol, self.player.GetVolume() * 100.0, self.player.GetState() )
+        
 
     def __getNextSong(self):
         if not self.musicFiles:
@@ -91,6 +102,43 @@ class MusicPlayer:
         filename = self.musicFiles[self.pos]
         self.pos = (self.pos + 1) % len(self.musicFiles)
         return filename      
+
+class InputTimeDialog ( wx.Dialog ):
+    def __init__( self, parent, startValue = 2.0, setter = None ):
+        wx.Dialog.__init__ ( self, parent, id = wx.ID_ANY, title = wx.EmptyString, pos = wx.DefaultPosition, size = wx.DefaultSize, style = wx.DEFAULT_DIALOG_STYLE )
+        self.setter = setter
+        self.SetSizeHints( wx.DefaultSize, wx.DefaultSize )
+        bSizer1 = wx.BoxSizer( wx.VERTICAL )
+        bSizer2 = wx.BoxSizer( wx.HORIZONTAL )
+        self.m_staticText1 = wx.StaticText( self, wx.ID_ANY, u"Zeit in Minuten", wx.DefaultPosition, wx.DefaultSize, 0 )
+        self.m_staticText1.Wrap( -1 )
+        bSizer2.Add( self.m_staticText1, 0, wx.ALL, 5 )
+        self.floatspin = FS.FloatSpin(self, -1, pos=(50, 50), min_val=0.1, max_val=60,
+                                 increment=0.5, value=startValue, agwStyle=FS.FS_LEFT)
+        self.floatspin.SetFormat("%f")
+        self.floatspin.SetDigits(1)    
+        bSizer2.Add( self.floatspin, 0, wx.ALL, 5 )
+        bSizer1.Add( bSizer2, 1, wx.EXPAND, 5 )
+        bSizer1.Add( ( 0, 0), 1, wx.EXPAND, 5 )
+        bSizer3 = wx.BoxSizer( wx.HORIZONTAL )
+        bSizer3.Add( ( 0, 0), 1, wx.EXPAND, 5 )
+        self.m_button1 = wx.Button( self, wx.ID_ANY, u"OK", wx.DefaultPosition, wx.DefaultSize, 0 )
+        bSizer3.Add( self.m_button1, 0, wx.ALL, 5 )
+        self.m_button1.Bind(wx.EVT_BUTTON, self.OnClose)
+        self.m_button2 = wx.Button( self, wx.ID_ANY, u"Abbrechen", wx.DefaultPosition, wx.DefaultSize, 0 )
+        self.m_button2.Bind(wx.EVT_BUTTON, self.OnClose)
+        bSizer3.Add( self.m_button2, 0, wx.ALL, 5 )
+        bSizer1.Add( bSizer3, 1, wx.EXPAND, 5 )
+        self.SetSizer( bSizer1 )
+        self.Layout()
+        bSizer1.Fit( self )
+        self.Centre( wx.BOTH )
+
+    def OnClose(self, event):
+        if self.m_button1 == event.EventObject and self.setter is not None:
+            # OK button pressed. Call setter
+            self.setter(self.floatspin.GetValue())
+        self.Destroy()
 
 class LEDCtrl (gizmos.LEDNumberCtrl):
     def __init__(self, *args, **kwargs):
@@ -166,13 +214,22 @@ class LEDTimer(wx.Frame):
             self.musicPlayer.volUp()
         elif ord('-') == key:
             self.musicPlayer.volDown()
+        else:
+            event.Skip()
 
     def OnContextMenu(self, event):
         pos = event.GetPosition()
         pos = self.ScreenToClient(pos)
         self.PopupMenu(self.menu, pos)
 
+    def ChangeTimer ( self, val):
+        self.timerCount = 60 * val
+        self.SetTitle(title=f'Timer - {self.fmtTimer(self.timerCount)}')
+        self.Paint()
+
     def OnSetTimer(self, event):
+        dialog = InputTimeDialog(self, startValue = self.timerCount / 60, setter = self.ChangeTimer)
+        dialog.ShowModal()
         pass
 
     def OnStartTimer(self, event=None):
@@ -219,6 +276,8 @@ def main(argv):
     parser.add_argument("-m", "--minutes", type=float, default=2.0)
     parser.add_argument("-d", "--dir", help="Directory to use for music")
     parser.add_argument("-f", "--files", help="File to use for music. Could be given multiple time", default=[], action="append")
+    parser.add_argument("-p", "--position", help="With which music file to start playing. 0 ist the first file", type=int)
+    parser.add_argument("-v", "--volume", help="Volume in Percent", type=int)
     args = parser.parse_args(argv[1:])
 
     app = wx.App()
@@ -229,12 +288,16 @@ def main(argv):
         frame.musicPlayer.addMusicFromDir(args.dir)
     for filename in args.files:
         frame.musicPlayer.addMusicFromFile(filename)
+    if args.position:
+        frame.musicPlayer.setPosition(args.position)
+    if args.volume:
+        frame.musicPlayer.setVol(args.volume)
     frame.Show(True)
     app.SetTopWindow(frame)
     app.MainLoop()
 
 if __name__ == '__main__':
     args = sys.argv
-    #args = [sys.argv[0]] + ["-d", "/home/thias/Desktop/LSL/music/Hasta La Blister/", "-m.2" ]
-    args = [sys.argv[0]] + ["-d", "/home/thias/Desktop/LSL/music/guitar/", "-m10" ]
+    #args = [sys.argv[0]] + ["-d", "/home/thias/Desktop/LSL/music/MaartenSchellekens/", "-m2" "-v15"]
+    #args = [sys.argv[0]] + ["-d", "/home/thias/Desktop/LSL/music/guitar/", "-m10", "-v10" ]
     sys.exit(main(args))
