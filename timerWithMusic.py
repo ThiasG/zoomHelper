@@ -84,14 +84,14 @@ class MusicPlayer:
         self.volUp(inc = -dec)
 
     def setPosition(self, pos):
-        self.pos = self.pos % len(self.musicFiles)
+        self.pos = pos % len(self.musicFiles)
 
     def setVol(self, vol = 100):
         if self.player.GetVolume() < 0.00001 and  self.player.GetState() == wx.media.MEDIASTATE_STOPPED:
             self.vol = vol
         else:
             self.player.SetVolume(self.volToIntern(vol))
-        print ("volUp", vol, self.player.GetVolume() * 100.0, self.player.GetState() )
+        print ("setVol", vol, self.player.GetVolume() * 100.0, self.player.GetState() )
         
 
     def __getNextSong(self):
@@ -295,6 +295,6 @@ def main(argv):
 
 if __name__ == '__main__':
     args = sys.argv
-    #args = [sys.argv[0]] + ["-d", "/home/thias/Desktop/LSL/music/MaartenSchellekens/", "-m2" "-v15"]
+    #args = [sys.argv[0]] + ["-d", "/home/thias/Desktop/LSL/music/MaartenSchellekens/", "-m2", "-p3", "-v15" ]
     #args = [sys.argv[0]] + ["-d", "/home/thias/Desktop/LSL/music/guitar/", "-m10", "-v10" ]
     sys.exit(main(args))
